@@ -1,0 +1,27 @@
+parameters
+  ton  = 0.05
+  toff = 0.05
+  kr   = 10
+  kp   = 4
+  dp   = 1
+  dr   = 1
+  tp   = 0.015
+
+species
+  R : int
+  P : int
+  D : bool
+
+reactions
+  0 -> D      @ ton * ( 1 - D );
+  D -> 0      @ toff * D;
+  D -> D + R  @ kr * D;
+  R -> R + P  @ kp * R;
+  R -> 0      @ dr * R;
+  P -> 0      @ P * dp;
+  P -> P + D  @ P * ( 1 - D ) * tp;
+
+init
+  R = 4
+  P = 13
+  D = 0
