@@ -1,44 +1,53 @@
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+------------------------------------------------------------------------------
 module Main where
 ------------------------------------------------------------------------------
 import           Control.Monad.Trans.RWS.Strict ( execRWST )
+import           Data.Maybe
+import qualified Data.Text as T
+import           Options.Generic
 import qualified System.Environment as Sys
 ------------------------------------------------------------------------------
-import           SSA.Parser
-import           SSA.Model
-import           SSA.SSA
+import qualified SSA.Parser as SSA
+import qualified SSA.Model  as SSA
+import qualified SSA.SSA    as SSA
 ------------------------------------------------------------------------------
-settings :: Model -> Time -> Maybe FilePath -> SimulationSettings
-settings sys tmax log = SimulationSettings
-  { system = sys
-  , tmax = tmax
-  , granularity = 10
-  , verbose = True
-  , logFile = log
-  }
+data Args = Args
+  { model       :: String
+  , tmax        :: Double
+  , csv         :: Maybe FilePath
+  , granularity :: Maybe Double
+  , verbose     :: Maybe Bool
+  , warmup      :: Maybe Double
+  } deriving (Generic, Show)
 
-simState :: Model -> SimState
-simState sys = SimState
-  { state = initial sys
-  , time = 0
-  , tlast = 0
-  , slast = initial sys
-  }
+instance ParseRecord Args
+------------------------------------------------------------------------------
+settingsAndState :: Args -> SSA.Model -> (SSA.SimulationSettings,SSA.SimState)
+settingsAndState Args{..} s =
+  ( SSA.SimulationSettings
+    { SSA.system = s
+    , SSA.tmax = tmax
+    , SSA.granularity = fromMaybe 10 granularity
+    , SSA.verbose = fromMaybe True verbose
+    , SSA.logFile = csv
+    }
+  , SSA.SimState
+    { SSA.state = SSA.initial s
+    , SSA.time = - fromMaybe 0 warmup
+    , SSA.tlast = 0
+    , SSA.slast = SSA.initial s
+    }
+  )
 
-runSimulation :: Model -> Time -> FilePath -> IO Trajectory
-runSimulation m t l =
-  let simSettings = settings m t (Just l)
-   in pure . snd =<< execRWST simulation simSettings (simState m)
-
-main :: IO ()
 main = do
-  args <- Sys.getArgs
-  case args of
-    modelFile : tmax' : log : _ -> do
-      res <- readFile modelFile
-      let tmax = read tmax' :: Double
-      case parseModel modelFile res of
-        Left err -> print err
-        Right m -> do
-          _ <- runSimulation m tmax log
-          return ()
-    _ -> putStrLn "provide a model file"
+  args <- getRecord "SSA"
+  modelStr <- readFile $ model args
+  case SSA.parseModel (model args) modelStr of
+    Left err -> print err
+    Right m -> do
+      let (settings, state) = settingsAndState args m
+      _ <- execRWST SSA.simulation settings state
+      putStrLn "Simulation finished"

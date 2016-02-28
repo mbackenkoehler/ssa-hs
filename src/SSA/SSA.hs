@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE BangPatterns      #-}
 ------------------------------------------------------------------------------
 {-|
   Module      : SSA.SSA
@@ -24,7 +23,7 @@ import qualified Data.Text.IO as T
 import           System.Random          ( randomRIO )
 import           Control.Monad
 import           Control.Monad.IO.Class ( liftIO )
-import           Control.Monad.Trans.RWS.Strict hiding  ( state )
+import           Control.Monad.Trans.RWS.Strict hiding ( state )
 ------------------------------------------------------------------------------
 import           SSA.Model
 ------------------------------------------------------------------------------
@@ -33,8 +32,8 @@ type Time = Double
 data SimState = SimState
   { state :: !State
   , time  :: {-# UNPACK #-} !Time
-  , tlast :: {-# UNPACK #-} !Rational -- ^ last logging time point
-  , slast :: !State                   -- ^ last logged state
+  , tlast :: {-# UNPACK #-} !Time -- ^ last logging time point
+  , slast :: !State               -- ^ last logged state
   } deriving Show
 
 type Trajectory = [State]
@@ -42,7 +41,7 @@ type Trajectory = [State]
 data SimulationSettings = SimulationSettings
   { system      :: Model
   , tmax        :: {-# UNPACK #-} !Time
-  , granularity :: {-# UNPACK #-} !Rational
+  , granularity :: {-# UNPACK #-} !Time
   , verbose     :: !Bool
   , logFile     :: Maybe FilePath
   }
@@ -61,7 +60,7 @@ step :: Simulation
 step = do
   s <- gets state
   sys <- asks system
-  let f a r = let r' = propensity r s in (a+r',(a+r', r))
+  let f a r = let r' = propensity r s in (a+r',(a+r',r))
       (rsum,rs) = mapAccumL f 0 $ reactions sys
   rand <- liftIO $ randomRIO (0,rsum)
   dt <- liftIO $ timeStep rsum
@@ -76,21 +75,20 @@ timeStep l = (\r -> -log (1-r) / l) <$> randomRIO (0,1)
 logState :: Simulation
 logState = do
     SimState {..} <- get
-    !h <- asks granularity
-    let !tnext  = tlast + h
-        !tnext' = fromRational tnext :: Time
-    when (time >= tnext') $ do
+    h <- asks granularity
+    let tnext = tlast + h
+    when (time >= tnext) $ do
       tmax <- asks tmax
-      unless (tnext' > tmax) $ writeLog tnext' slast
-      modify $ \ !s -> s { tlast=tnext }
-    when (time >= tnext') logState
-    modify $ \ !s -> s { slast=state }
+      unless (tnext > tmax) $ writeLog tnext slast
+      modify $ \s -> s { tlast = tnext }
+    when (time >= tnext) logState
+    modify $ \s -> s { slast = state }
 
 writeLog :: Time -> State -> Simulation
 writeLog time state = do
     let stateStr = (T.init . T.tail . T.pack . show) state <> "\n"
-        timeStr  = T.justifyLeft 10 ' ' . T.pack . show . round $ time
-    !verbose <- asks verbose
+        timeStr = T.justifyLeft 10 ' ' . T.pack . show . round $ time
+    verbose <- asks verbose
     when verbose $ liftIO $ T.putStr $ timeStr <> stateStr
     logfile <- asks logFile
     liftIO $ maybe (pure ()) (flip T.appendFile stateStr) logfile
