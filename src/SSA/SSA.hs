@@ -50,10 +50,20 @@ type Simulation = RWST SimulationSettings Trajectory SimState IO ()
 ------------------------------------------------------------------------------
 simulation :: Simulation
 simulation = do
+  mPath <- asks logFile
+  case mPath of
+    Nothing -> return ()
+    Just path -> do
+      model <- asks system
+      liftIO $ initLogFile path model
+  runSimulation
+
+runSimulation :: Simulation
+runSimulation = do
   logState >> step
   tmax <- asks tmax
   time <- gets time
-  if (time > tmax) then logState else simulation
+  if (time > tmax) then logState else runSimulation
 
 step :: Simulation
 step = do
