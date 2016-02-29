@@ -43,7 +43,7 @@ settingsAndState Args{..} s =
   )
 
 main = do
-  args <- getRecord "SSA"
+  args <- getRecord "Stochastic Simulation Algorithm"
   modelStr <- readFile $ model args
   case SSA.parseModel (model args) modelStr of
     Left err -> print err

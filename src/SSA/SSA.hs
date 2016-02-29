@@ -50,8 +50,7 @@ type Simulation = RWST SimulationSettings Trajectory SimState IO ()
 ------------------------------------------------------------------------------
 simulation :: Simulation
 simulation = do
-  logState
-  step
+  logState >> step
   tmax <- asks tmax
   time <- gets time
   if (time > tmax) then logState else simulation
@@ -74,25 +73,25 @@ timeStep l = (\r -> -log (1-r) / l) <$> randomRIO (0,1)
 
 logState :: Simulation
 logState = do
-    SimState {..} <- get
-    h <- asks granularity
-    let tnext = tlast + h
-    when (time >= tnext) $ do
-      tmax <- asks tmax
-      unless (tnext > tmax) $ writeLog tnext slast
-      modify $ \s -> s { tlast = tnext }
-    when (time >= tnext) logState
-    modify $ \s -> s { slast = state }
+  SimState {..} <- get
+  h <- asks granularity
+  let tnext = tlast + h
+  when (time >= tnext) $ do
+    tmax <- asks tmax
+    unless (tnext > tmax) $ writeLog tnext slast
+    modify $ \s -> s { tlast = tnext }
+  when (time >= tnext) logState
+  modify $ \s -> s { slast = state }
 
 writeLog :: Time -> State -> Simulation
 writeLog time state = do
-    let stateStr = (T.init . T.tail . T.pack . show) state <> "\n"
-        timeStr = T.justifyLeft 10 ' ' . T.pack . show . round $ time
-    verbose <- asks verbose
-    when verbose $ liftIO $ T.putStr $ timeStr <> stateStr
-    logfile <- asks logFile
-    liftIO $ maybe (pure ()) (flip T.appendFile stateStr) logfile
+  let stateStr = (T.init . T.tail . T.pack . show) state <> "\n"
+      timeStr = T.justifyLeft 10 ' ' . T.pack . show . round $ time
+  verbose <- asks verbose
+  when verbose . liftIO . T.putStr $ timeStr <> stateStr
+  logfile <- asks logFile
+  liftIO $ maybe (pure ()) (flip T.appendFile stateStr) logfile
 
 initLogFile :: FilePath -> Model -> IO ()
 initLogFile file =
-    writeFile file . (<> "\n") . intercalate "," . fmap T.unpack . names
+  writeFile file . (<> "\n") . intercalate "," . fmap T.unpack . names

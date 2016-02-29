@@ -1,5 +1,4 @@
 {-# LANGUAGE TupleSections   #-}
-{-# LANGUAGE RecordWildCards #-}
 ------------------------------------------------------------------------------
 {-|
   Module      : SSA.Parser
@@ -15,10 +14,10 @@ module SSA.Parser
       ( parseModel
       ) where
 ------------------------------------------------------------------------------
-import           Data.Bifunctor as B
+import qualified Data.Bifunctor as B
 import           Text.Parsec hiding ( State )
-import           Text.Parsec.String
 import           Text.Parsec.Expr
+import           Text.Parsec.String
 import           Text.Parsec.Token
 import           Text.Parsec.Language
 ------------------------------------------------------------------------------
@@ -108,12 +107,9 @@ initVal = (,) <$> m_identifier
               <*> (m_reservedOp "=" >> fromIntegral <$> m_natural)
 
 modelParser :: Parser PModel
-modelParser = m_whiteSpace >> do
-  parameters <- parameterList
-  species <- speciesList
-  reacts <- reactsList
-  initials <- inits
-  return PModel{..}
+modelParser = do
+  m_whiteSpace
+  PModel <$> parameterList <*> speciesList <*> reactsList <*> inits
 
 parseModel :: FilePath -> String -> Either ParseError Model
 parseModel f s = B.second transformModel $ parse modelParser f s
