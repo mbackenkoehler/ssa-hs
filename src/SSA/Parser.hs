@@ -1,4 +1,6 @@
 {-# LANGUAGE TupleSections   #-}
+{-# LANGUAGE LambdaCase      #-}
+{-# LANGUAGE RecordWildCards #-}
 ------------------------------------------------------------------------------
 {-|
   Module      : SSA.Parser
@@ -14,7 +16,9 @@ module SSA.Parser
       ( parseModel
       ) where
 ------------------------------------------------------------------------------
+import           Control.Monad
 import qualified Data.Bifunctor as B
+import           Data.List ( concat )
 import           Text.Parsec hiding ( State )
 import           Text.Parsec.Expr
 import           Text.Parsec.String
@@ -23,6 +27,14 @@ import           Text.Parsec.Language
 ------------------------------------------------------------------------------
 import           SSA.Model
 import           SSA.Expr
+------------------------------------------------------------------------------
+data ModelParserError
+  = ParsecError ParseError
+  | NameError String
+
+instance Show ModelParserError where
+  show (ParsecError err) = show err
+  show (NameError msg) = msg
 ------------------------------------------------------------------------------
 TokenParser
   { parens = m_parens
@@ -111,5 +123,29 @@ modelParser = do
   m_whiteSpace
   PModel <$> parameterList <*> speciesList <*> reactsList <*> inits
 
-parseModel :: FilePath -> String -> Either ParseError Model
-parseModel f s = B.second transformModel $ parse modelParser f s
+parseModel :: FilePath -> String -> Either ModelParserError Model
+parseModel f s = B.second transformModel . checks $ B.first ParsecError pmodel
+  where
+    pmodel = parse modelParser f s
+
+    checks e@(Left _) = e
+    checks (Right m@PModel{..}) = do
+      let sNames = (\(Species _ n) -> n) <$> species
+          idents = (fst <$> parameters) ++ sNames
+          propensities = (\(PReaction _ _ e) -> e) <$> reacts
+          reactants = fst <$> concat ((\(PReaction i o _) -> i++o) <$> reacts)
+      forM_ propensities (unboundId idents)
+      forM_ reactants (isElem sNames)
+      return m
+
+    unboundId names expr =
+        when (anyExpr (unbound names) expr) $
+          Left . NameError $ "Unbound identifier in rate expression"
+
+    unbound names = \case
+      Atomic (Var n) -> n `notElem` names
+      _ -> False
+
+    isElem xs e = if e `elem` xs
+                     then Right ()
+                     else Left . NameError $ "Unkown species: " ++ e

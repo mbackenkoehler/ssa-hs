@@ -10,7 +10,7 @@
 ------------------------------------------------------------------------------
 module SSA.Expr
       ( Expr(..), Atom(..), BinOperator(..)
-      , subs, simplify, vectorize, op
+      , subs, simplify, vectorize, op, anyExpr
       ) where
 ------------------------------------------------------------------------------
 import           Data.List ( group, all )
@@ -48,6 +48,7 @@ op :: BinOperator -> Double -> Double -> Double
 op Add = (+)
 op Sub = (-)
 op Mul = (*)
+op Div = (/)
 
 subs :: [(String, Double)] -> Expr -> Expr
 subs cs e@(Atomic (Var id)) = fromMaybe e (Atomic . Const <$> lookup id cs)
@@ -60,3 +61,7 @@ vectorize :: [String] -> Expr -> Expr
 vectorize s (Atomic (Var name)) = Atomic $ Id $ length $ takeWhile (/= name) s
 vectorize s (BinOp f e1 e2) = BinOp f (vectorize s e1) (vectorize s e2)
 vectorize s e = e
+
+anyExpr :: (Expr -> Bool) -> Expr -> Bool
+anyExpr f b@(BinOp _ e1 e2) = f b || anyExpr f e1 || anyExpr f e2
+anyExpr f e = f e
