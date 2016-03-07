@@ -13,12 +13,12 @@
 module SSA.Model
       ( State, Ident, Nat, Species(..), SpeciesType(..), PModel(..)
       , PReaction(..), Educt, Product, Name, Model(..), Rate, Reaction(..)
-      , transformModel
-      , applyChange
+      , transformModel, evalV, applyChange
       ) where
 ------------------------------------------------------------------------------
-import           Data.Maybe ( fromMaybe )
-import qualified Data.Text   as T
+import           Data.Maybe   ( fromMaybe )
+import           Data.Monoid  ( (<>) )
+import qualified Data.Text    as T
 import qualified Data.Vector.Unboxed as V
 import           Data.Vector.Unboxed ( (!) )
 ------------------------------------------------------------------------------
@@ -58,12 +58,16 @@ data Model = Model
   , initial   :: State
   }
 
+instance Show Model where show = ("Model w/ species: " <>) . show . names
+
 type Rate = Double
 
 data Reaction = Reaction
   { propensity :: State -> Rate
   , change     :: State
   }
+
+instance Show Reaction where show = ("Reaction" <>) . show . change
 ------------------------------------------------------------------------------
 evalV :: Expr -> State -> Double
 evalV (Atomic (Const c)) _ = c

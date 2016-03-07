@@ -13,12 +13,12 @@
 -}
 ------------------------------------------------------------------------------
 module SSA.Parser
-      ( parseModel
+      ( parseModel, ModelParserError(..)
       ) where
 ------------------------------------------------------------------------------
 import           Control.Monad
 import qualified Data.Bifunctor as B
-import           Data.List ( concat )
+import           Data.List ( concatMap )
 import           Text.Parsec hiding ( State )
 import           Text.Parsec.Expr
 import           Text.Parsec.String
@@ -53,7 +53,8 @@ TokenParser
   , opStart = oneOf "+-*/@;:"
   , opLetter = oneOf "+>-*/@;:"
   , reservedOpNames = ["+","-","*","/","@",";",":","->"]
-  , reservedNames = ["parameters","species","int","bool","init","reactions"]
+  , reservedNames = ["parameters","species","int","bool","boolean","const"
+                    ,"init","var","reactions"]
   }
 
 expr :: Parser Expr
@@ -74,19 +75,24 @@ num :: Parser Double
 num = try m_float <|> fmap fromIntegral m_integer
 
 parameterList :: Parser [(Ident, Double)]
-parameterList = m_reserved "parameters" >> many parameter <?> "parameters"
+parameterList = constKeyword >> many parameter <?> "parameters"
+  where constKeyword = m_reserved "parameters" <|> m_reserved "const"
 
 parameter :: Parser (Ident, Double)
 parameter = (,) <$> m_identifier <*> (m_reservedOp "=" >> num)
 
 speciesList :: Parser [Species]
-speciesList = m_reserved "species" >> many specie <?> "species"
+speciesList = varKeyword >> many specie <?> "species"
+  where varKeyword = m_reserved "species" <|> m_reserved "var"
 
 specie :: Parser Species
 specie = flip Species <$> m_identifier <*> (m_reservedOp ":" >> typ)
 
 typ :: Parser SpeciesType
-typ = (m_reserved "int" >> pure HCopy) <|> (m_reserved "bool" >> pure LCopy)
+typ = (hcType >> pure HCopy) <|> (lcType >> pure LCopy)
+  where
+    hcType = m_reserved "int" <|> m_reserved "species"
+    lcType = m_reserved "bool" <|> m_reserved "boolean"
 
 reactsList :: Parser [PReaction]
 reactsList = m_reserved "reactions" >> many reaction <?> "reactions"
@@ -133,7 +139,7 @@ parseModel f s = B.second transformModel . checks $ B.first ParsecError pmodel
       let sNames = (\(Species _ n) -> n) <$> species
           idents = (fst <$> parameters) ++ sNames
           propensities = (\(PReaction _ _ e) -> e) <$> reacts
-          reactants = fst <$> concat ((\(PReaction i o _) -> i++o) <$> reacts)
+          reactants = fst <$> concatMap (\(PReaction i o _) -> i++o) reacts
       forM_ propensities (unboundId idents)
       forM_ reactants (isElem sNames)
       return m

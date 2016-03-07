@@ -2,8 +2,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 ------------------------------------------------------------------------------
-module Main where
+{-|
+  Module      : Main
+  Description : Program entry point
+  Copyright   : 2016 Michael Backenköhler
+  License     : MIT
+  Maintainer  : Michael Backenköhler
+  Stability   : experimental
+  Portability : portable
+-}
 ------------------------------------------------------------------------------
+module Main ( main ) where
+------------------------------------------------------------------------------
+import           Control.Monad ( void )
 import           Control.Monad.Trans.RWS.Strict ( execRWST )
 import           Data.Maybe
 import qualified Data.Text as T
@@ -42,6 +53,7 @@ settingsAndState Args{..} s =
     }
   )
 
+main :: IO ()
 main = do
   args <- getRecord "Stochastic Simulation Algorithm"
   modelStr <- readFile $ model args
@@ -49,5 +61,5 @@ main = do
     Left err -> print err
     Right m -> do
       let (settings, state) = settingsAndState args m
-      _ <- execRWST SSA.simulation settings state
+      void $ execRWST SSA.simulation settings state
       putStrLn "Simulation finished"

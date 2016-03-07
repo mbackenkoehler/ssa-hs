@@ -56,7 +56,11 @@ test-suite ssa-hs-test
     Spec.hs
   build-depends:
     base,
-    ssa-hs
+    ssa-hs,
+    QuickCheck,
+    hspec,
+    vector,
+    text
   ghc-options:
     -threaded -rtsopts -with-rtsopts=-N
   default-language:
