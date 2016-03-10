@@ -22,7 +22,7 @@ import qualified Data.Text    as T
 import qualified Data.Text.IO as T
 import           System.Random          ( randomRIO )
 import           Control.Monad
-import           Control.Monad.IO.Class ( liftIO )
+import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Control.Monad.Trans.RWS.Strict hiding ( state )
 ------------------------------------------------------------------------------
 import           SSA.Model
@@ -46,62 +46,60 @@ data SimulationSettings = SimulationSettings
   , logFile     :: Maybe FilePath
   }
 
-type Simulation = RWST SimulationSettings Trajectory SimState IO ()
+type Simulation a = RWST SimulationSettings Trajectory SimState IO a
 ------------------------------------------------------------------------------
-simulation :: Simulation
+simulation :: Simulation ()
 simulation = do
   mPath <- asks logFile
   case mPath of
-    Nothing -> return ()
-    Just path -> do
-      model <- asks system
-      liftIO $ initLogFile path model
+    Nothing -> pure ()
+    Just path -> initLog path =<< asks system
   runSimulation
 
-runSimulation :: Simulation
+runSimulation :: Simulation ()
 runSimulation = do
   logState >> step
   tmax <- asks tmax
   time <- gets time
-  if (time > tmax) then logState else runSimulation
+  if time > tmax then logState else runSimulation
 
-step :: Simulation
+step :: Simulation ()
 step = do
-  s <- gets state
-  sys <- asks system
-  let f a r = let r' = propensity r s in (a+r',(a+r',r))
-      (rsum,rs) = mapAccumL f 0 $ reactions sys
+  (rsum, rs) <- rates
+  tsucc <- (+) <$> gets time <*> timeStep rsum
   rand <- liftIO $ randomRIO (0,rsum)
-  dt <- liftIO $ timeStep rsum
-  t <- gets time
   let Just (_,r) = find ((>rand) . fst) rs
-      succ = applyChange s $ change r
-  modify $ \s -> s { state = succ, time = t+dt }
+  succ <- (`applyChange` change r) <$> gets state
+  modify $ \s -> s { state = succ, time = tsucc }
 
-timeStep :: Rate -> IO Time
-timeStep l = (\r -> -log (1-r) / l) <$> randomRIO (0,1)
+rates :: Simulation (Rate, [(Rate, Reaction)])
+rates = do
+  s <- gets state
+  let f a r = let r' = propensity r s in (a+r',(a+r',r))
+  mapAccumL f 0 . reactions <$> asks system
 
-logState :: Simulation
+timeStep :: MonadIO m => Rate -> m Time
+timeStep l = (\r -> -log (1-r) / l) <$> liftIO (randomRIO (0,1))
+
+logState :: Simulation ()
 logState = do
   SimState {..} <- get
   h <- asks granularity
   let tnext = tlast + h
   when (time >= tnext) $ do
     tmax <- asks tmax
-    unless (tnext > tmax) $ writeLog tnext slast
     modify $ \s -> s { tlast = tnext }
-  when (time >= tnext) logState
+    unless (tnext > tmax) $ writeLog tnext slast
+    logState
   modify $ \s -> s { slast = state }
 
-writeLog :: Time -> State -> Simulation
+writeLog :: Time -> State -> Simulation ()
 writeLog time state = do
-  let stateStr = (T.init . T.tail . T.pack . show) state <> "\n"
+  let stateStr = (<> "\n") . T.init . T.tail . T.pack . show $ state
       timeStr = T.justifyLeft 10 ' ' . T.pack . show . round $ time
   verbose <- asks verbose
   when verbose . liftIO . T.putStr $ timeStr <> stateStr
-  logfile <- asks logFile
-  liftIO $ maybe (pure ()) (flip T.appendFile stateStr) logfile
+  liftIO . maybe (pure ()) (`T.appendFile` stateStr) =<< asks logFile
 
-initLogFile :: FilePath -> Model -> IO ()
-initLogFile file =
-  writeFile file . (<> "\n") . intercalate "," . fmap T.unpack . names
+initLog :: MonadIO m => FilePath -> Model -> m ()
+initLog f = liftIO . T.writeFile f . (<> "\n") . T.intercalate "," . names
