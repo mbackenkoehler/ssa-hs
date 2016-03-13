@@ -30,31 +30,26 @@ import           SSA.Model
 type Time = Double
 
 data SimState = SimState
-  { state :: !State
-  , time  :: {-# UNPACK #-} !Time
-  , tlast :: {-# UNPACK #-} !Time -- ^ last logging time point
-  , slast :: !State               -- ^ last logged state
+  { state :: State
+  , time  :: Time
+  , tlast :: Time  -- ^ last logging time point
+  , slast :: State -- ^ last logged state
   } deriving Show
 
 type Trajectory = [State]
 
 data SimulationSettings = SimulationSettings
   { system      :: Model
-  , tmax        :: {-# UNPACK #-} !Time
-  , granularity :: {-# UNPACK #-} !Time
-  , verbose     :: !Bool
+  , tmax        :: Time
+  , granularity :: Time
+  , verbose     :: Bool
   , logFile     :: Maybe FilePath
   }
 
 type Simulation a = RWST SimulationSettings Trajectory SimState IO a
 ------------------------------------------------------------------------------
 simulation :: Simulation ()
-simulation = do
-  mPath <- asks logFile
-  case mPath of
-    Nothing -> pure ()
-    Just path -> initLog path =<< asks system
-  runSimulation
+simulation = logStart >> runSimulation >> logEnd
 
 runSimulation :: Simulation ()
 runSimulation = do
@@ -101,5 +96,17 @@ writeLog time state = do
   when verbose . liftIO . T.putStr $ timeStr <> stateStr
   liftIO . maybe (pure ()) (`T.appendFile` stateStr) =<< asks logFile
 
-initLog :: MonadIO m => FilePath -> Model -> m ()
-initLog f = liftIO . T.writeFile f . (<> "\n") . T.intercalate "," . names
+logStart :: Simulation ()
+logStart = do
+  liftIO (putStrLn "Running simulation...")
+  mPath <- asks logFile
+  case mPath of
+    Nothing -> pure ()
+    Just p -> csvHeader p =<< asks system
+
+csvHeader :: MonadIO m => FilePath -> Model -> m ()
+csvHeader f = liftIO . T.writeFile f . (<> "\n") . T.intercalate "," . names
+
+logEnd :: Simulation ()
+logEnd = liftIO . putStrLn . endMsg =<< asks logFile
+  where endMsg = ("Simulation finished" <>) . maybe "" ((<> ")") . (" (" <>))

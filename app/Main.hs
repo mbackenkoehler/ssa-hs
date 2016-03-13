@@ -36,8 +36,8 @@ data Args = Args
 
 instance ParseRecord Args
 ------------------------------------------------------------------------------
-settingsAndState :: Args -> SSA.Model -> (SSA.SimulationSettings,SSA.SimState)
-settingsAndState Args{..} s =
+settings :: Args -> SSA.Model -> (SSA.SimulationSettings,SSA.SimState)
+settings Args{..} s =
   ( SSA.SimulationSettings
     { SSA.system = s
     , SSA.tmax = tmax
@@ -59,7 +59,4 @@ main = do
   modelStr <- readFile $ model args
   case SSA.parseModel (model args) modelStr of
     Left err -> print err
-    Right m -> do
-      let (settings, state) = settingsAndState args m
-      void $ execRWST SSA.simulation settings state
-      putStrLn "Simulation finished"
+    Right m -> void . uncurry (execRWST SSA.simulation) $ settings args m
