@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE TypeOperators     #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
@@ -18,6 +20,7 @@ import           Control.Monad ( void )
 import           Control.Monad.Trans.RWS.Strict ( execRWST )
 import           Data.Maybe
 import qualified Data.Text as T
+import           GHC.Generics
 import           Options.Generic
 import qualified System.Environment as Sys
 ------------------------------------------------------------------------------
@@ -26,12 +29,12 @@ import qualified SSA.Model  as SSA
 import qualified SSA.SSA    as SSA
 ------------------------------------------------------------------------------
 data Args = Args
-  { model       :: String
-  , tmax        :: Double
-  , csv         :: Maybe FilePath
-  , granularity :: Maybe Double
-  , verbose     :: Maybe Bool
-  , warmup      :: Maybe Double
+  { model       :: String         <?> "Model specification file"
+  , tmax        :: Double         <?> "Time to run the simulation"
+  , csv         :: Maybe FilePath <?> "CSV output of simulation values"
+  , granularity :: Maybe Double   <?> "Logging intervals"
+  , verbose     :: Maybe Bool     <?> "Verbosity during simulation"
+  , warmup      :: Maybe Double   <?> "Warmup time before logging"
   } deriving (Generic, Show)
 
 instance ParseRecord Args
@@ -40,14 +43,14 @@ settings :: Args -> SSA.Model -> (SSA.SimulationSettings,SSA.SimState)
 settings Args{..} s =
   ( SSA.SimulationSettings
     { SSA.system = s
-    , SSA.tmax = tmax
-    , SSA.granularity = fromMaybe 10 granularity
-    , SSA.verbose = fromMaybe True verbose
-    , SSA.logFile = csv
+    , SSA.tmax = unHelpful tmax
+    , SSA.granularity = fromMaybe 10 (unHelpful granularity)
+    , SSA.verbose = fromMaybe True (unHelpful verbose)
+    , SSA.logFile = unHelpful csv
     }
   , SSA.SimState
     { SSA.state = SSA.initial s
-    , SSA.time = - fromMaybe 0 warmup
+    , SSA.time = - fromMaybe 0 (unHelpful warmup)
     , SSA.tlast = 0
     , SSA.slast = SSA.initial s
     }
@@ -56,7 +59,8 @@ settings Args{..} s =
 main :: IO ()
 main = do
   args <- getRecord "Stochastic Simulation Algorithm"
-  modelStr <- readFile $ model args
-  case SSA.parseModel (model args) modelStr of
+  let modelFile = unHelpful (model args)
+  modelStr <- readFile modelFile
+  case SSA.parseModel modelFile modelStr of
     Left err -> print err
     Right m -> void . uncurry (execRWST SSA.simulation) $ settings args m
