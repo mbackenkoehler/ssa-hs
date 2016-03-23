@@ -95,5 +95,6 @@ transformModel :: PModel -> Model
 transformModel m@PModel{..} = Model
   { names = T.pack <$> processNames m
   , reactions = processReactions m
-  , initial = V.fromList [ fromMaybe 0 (lookup s initials) | s <- processNames m ]
+  , initial =
+      V.fromList [ fromMaybe 0 (lookup s initials) | s <- processNames m ]
   }
