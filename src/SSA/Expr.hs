@@ -13,7 +13,6 @@ module SSA.Expr
       , subs, simplify, vectorize, op, anyExpr
       ) where
 ------------------------------------------------------------------------------
-import           Data.List ( group, all )
 import           Data.Maybe
 ------------------------------------------------------------------------------
 data Expr
@@ -30,9 +29,6 @@ data Atom
 data BinOperator = Add | Sub | Mul | Div
   deriving (Eq, Show)
 ------------------------------------------------------------------------------
-unique :: Eq a => [a] -> Bool
-unique = all ((==1) . length) . group
-
 simplify :: Expr -> Expr
 simplify (BinOp t e1 e2) = tryEval $ BinOp t (tryEval e1) (tryEval e2)
   where
@@ -51,7 +47,7 @@ op Mul = (*)
 op Div = (/)
 
 subs :: [(String, Double)] -> Expr -> Expr
-subs cs e@(Atomic (Var id)) = fromMaybe e (Atomic . Const <$> lookup id cs)
+subs cs e@(Atomic (Var v)) = fromMaybe e (Atomic . Const <$> lookup v cs)
 subs cs (BinOp t e1 e2) = BinOp t (subs cs e1) (subs cs e2)
 subs _ e = e
 

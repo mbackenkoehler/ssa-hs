@@ -16,11 +16,11 @@ module SSA.SSA
     , simulation
     ) where
 ------------------------------------------------------------------------------
-import           Data.List              ( mapAccumL, find, intercalate )
+import           Data.List              ( mapAccumL, find )
 import           Data.Monoid
 import qualified Data.Text    as T
 import qualified Data.Text.IO as T
-import           System.Random          ( randomRIO )
+import           System.Random          ( randomIO, randomRIO )
 import           Control.Monad
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Control.Monad.Trans.RWS.Strict hiding ( state )
@@ -64,17 +64,21 @@ step = do
   tsucc <- (+) <$> gets time <*> timeStep rsum
   rand <- liftIO $ randomRIO (0,rsum)
   let Just (_,r) = find ((>rand) . fst) rs
-  succ <- (`applyChange` change r) <$> gets state
-  modify $ \s -> s { state = succ, time = tsucc }
+  successor <- (`applyChange` change r) <$> gets state
+  modify $ \s -> s { state = successor, time = tsucc }
 
 rates :: Simulation (Rate, [(Rate, Reaction)])
-rates = do
-  s <- gets state
-  let f a r = let r' = propensity r s in (a+r',(a+r',r))
-  mapAccumL f 0 . reactions <$> asks system
+rates = computeRates <$> gets state <*> asks system
+
+computeRates :: State -> Model -> (Rate, [(Rate, Reaction)])
+computeRates s = mapAccumL f 0 . reactions
+  where f a r = let r' = propensity r s in (a+r',(a+r',r))
 
 timeStep :: MonadIO m => Rate -> m Time
-timeStep l = (\r -> -log (1-r) / l) <$> liftIO (randomRIO (0,1))
+timeStep l = toExpDist l <$> liftIO randomIO
+
+toExpDist :: Rate -> Double -> Time
+toExpDist l r = -log (1-r) / l
 
 logState :: Simulation ()
 logState = do

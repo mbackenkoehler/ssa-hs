@@ -19,10 +19,8 @@ module Main ( main ) where
 import           Control.Monad ( void )
 import           Control.Monad.Trans.RWS.Strict ( execRWST )
 import           Data.Maybe
-import qualified Data.Text as T
 import           GHC.Generics
 import           Options.Generic
-import qualified System.Environment as Sys
 ------------------------------------------------------------------------------
 import qualified SSA.Parser as SSA
 import qualified SSA.Model  as SSA

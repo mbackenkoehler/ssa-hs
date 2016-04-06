@@ -1,5 +1,4 @@
 {-# LANGUAGE TupleSections   #-}
-{-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE RecordWildCards #-}
 ------------------------------------------------------------------------------
 {-|
@@ -18,7 +17,7 @@ module SSA.Parser
 ------------------------------------------------------------------------------
 import           Control.Monad
 import qualified Data.Bifunctor as B
-import           Data.List ( concatMap )
+import           Data.List ( group )
 import           Text.Parsec hiding ( State )
 import           Text.Parsec.Expr
 import           Text.Parsec.String
@@ -37,24 +36,24 @@ instance Show ModelParserError where
   show (NameError msg) = msg
 ------------------------------------------------------------------------------
 TokenParser
-  { parens = m_parens
+  { parens     = m_parens
   , identifier = m_identifier
   , reservedOp = m_reservedOp
-  , reserved = m_reserved
-  , semiSep1 = m_semiSep1
+  , reserved   = m_reserved
+  , semiSep1   = m_semiSep1
   , whiteSpace = m_whiteSpace
-  , float = m_float
-  , integer = m_integer
-  , natural = m_natural
+  , float      = m_float
+  , integer    = m_integer
+  , natural    = m_natural
   } = makeTokenParser $ emptyDef
-  { commentLine = "--"
-  , identStart = letter
-  , identLetter = alphaNum
-  , opStart = oneOf "+-*/@;:"
-  , opLetter = oneOf "+>-*/@;:"
+  { commentLine     = "--"
+  , identStart      = letter
+  , identLetter     = alphaNum
+  , opStart         = oneOf "+-*/@;:"
+  , opLetter        = oneOf "+>-*/@;:"
   , reservedOpNames = ["+","-","*","/","@",";",":","->"]
-  , reservedNames = ["parameters","species","int","bool","boolean","const"
-                    ,"init","var","reactions"]
+  , reservedNames   = ["parameters","species","int","bool","boolean","const"
+                      ,"init","var","reactions"]
   }
 
 expr :: Parser Expr
@@ -140,18 +139,20 @@ parseModel f s = B.second transformModel . checks $ B.first ParsecError pmodel
           idents = (fst <$> parameters) ++ sNames
           propensities = (\(PReaction _ _ e) -> e) <$> reacts
           reactants = fst <$> concatMap (\(PReaction i o _) -> i++o) reacts
+      unless (unique sNames) (Left (NameError "Species names not unique"))
       forM_ propensities (unboundId idents)
       forM_ reactants (isElem sNames)
       return m
 
-    unboundId names expr =
-        when (anyExpr (unbound names) expr) $
+    unique = all (== 1) . fmap length . group
+
+    unboundId names e =
+        when (anyExpr (unbound names) e) $
           Left . NameError $ "Unbound identifier in rate expression"
 
-    unbound names = \case
-      Atomic (Var n) -> n `notElem` names
-      _ -> False
+    unbound names (Atomic (Var n)) = n `notElem` names
+    unbound _ _ = False
 
-    isElem xs e = if e `elem` xs
-                     then Right ()
-                     else Left . NameError $ "Unkown species: " ++ e
+    isElem xs e
+      | e `elem` xs = Right ()
+      | otherwise = Left . NameError $ "Unkown species: " ++ e
