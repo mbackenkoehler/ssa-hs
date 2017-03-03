@@ -41,15 +41,32 @@ type Trajectory = [State]
 data SimulationSettings = SimulationSettings
   { system      :: Model
   , tmax        :: Time
-  , granularity :: Time
+  , loggingMode :: Either Time [Time]
   , verbose     :: Bool
   , logFile     :: Maybe FilePath
+  , runs        :: Int
   }
 
 type Simulation a = RWST SimulationSettings Trajectory SimState IO a
 ------------------------------------------------------------------------------
 simulation :: Simulation ()
-simulation = logStart >> runSimulation >> logEnd
+simulation = do
+  startTime <- gets time
+  logStart
+  r <- asks runs
+  replicateM_ r $ do
+    runSimulation
+    resetState startTime
+  logEnd
+
+resetState :: Time -> Simulation()
+resetState t = do
+  init <- initial <$> asks system
+  put SimState { state = init
+               , time  = t
+               , tlast = 0
+               , slast = init
+               }
 
 runSimulation :: Simulation ()
 runSimulation = do
@@ -83,9 +100,14 @@ toExpDist l r = -log (1-r) / l
 logState :: Simulation ()
 logState = do
   SimState {..} <- get
-  h <- asks granularity
-  let tnext = tlast + h
-  when (time >= tnext) $ do
+  mode <- asks loggingMode
+  let tnext = case mode of
+                Left h -> tlast + h
+                Right ts -> let future = [t | t <- ts, t > tlast]
+                             in if length future == 0
+                                   then time
+                                   else minimum future
+  when (time > tnext) $ do
     tmax <- asks tmax
     modify $ \s -> s { tlast = tnext }
     unless (tnext > tmax) $ writeLog tnext slast
@@ -96,9 +118,10 @@ writeLog :: Time -> State -> Simulation ()
 writeLog time state = do
   let stateStr = (<> "\n") . T.init . T.tail . T.pack . show $ state
       timeStr = T.justifyLeft 10 ' ' . T.pack . show . round $ time
+      timeState = (T.pack . show $ time) <> "," <> stateStr
   verbose <- asks verbose
   when verbose . liftIO . T.putStr $ timeStr <> stateStr
-  liftIO . maybe (pure ()) (`T.appendFile` stateStr) =<< asks logFile
+  liftIO . maybe (pure ()) (`T.appendFile` timeState) =<< asks logFile
 
 logStart :: Simulation ()
 logStart = do
@@ -109,7 +132,8 @@ logStart = do
     Just p -> csvHeader p =<< asks system
 
 csvHeader :: MonadIO m => FilePath -> Model -> m ()
-csvHeader f = liftIO . T.writeFile f . (<> "\n") . T.intercalate "," . names
+csvHeader f = liftIO . T.writeFile f . ("time," <>) . (<> "\n")
+              . T.intercalate "," . names
 
 logEnd :: Simulation ()
 logEnd = liftIO . putStrLn . endMsg =<< asks logFile

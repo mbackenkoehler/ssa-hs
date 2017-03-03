@@ -28,11 +28,12 @@ data Verbosity = Normal | Verbose deriving (Eq)
 
 data Args = Args
   { model       :: String         -- Model specification file
-  , tmax        :: Double         -- Time to run the simulation
+  , times       :: [Double]       -- Time to run the simulation
   , csv         :: Maybe FilePath -- CSV output of simulation values
   , granularity :: Maybe Double   -- Logging intervals
   , verbose     :: Verbosity      -- Verbosity during simulation
   , warmup      :: Maybe Double   -- Warmup time before logging
+  , runs        :: Maybe Int      -- Repeat simulation
   }
 ------------------------------------------------------------------------------
 args :: Parser Args
@@ -42,11 +43,11 @@ args = Args
      <> short 'm'
      <> metavar "FILE"
      <> help "Model specification file" )
-  <*> option auto
-      ( long "tmax"
+  <*> some (option auto
+      ( long "times"
      <> short 't'
-     <> metavar "TMAX"
-     <> help "Time to run the simulation" )
+     <> metavar "TIME"
+     <> help "Time to run the simulation" ))
   <*> optional (strOption
       ( long "output"
      <> short 'o'
@@ -65,20 +66,32 @@ args = Args
       ( long "warmup"
      <> short 'w'
      <> help "Warmup time before logging starts" ))
+  <*> optional (option auto
+      ( long "repeat"
+     <> short 'r'
+     <> metavar "N"
+     <> help "Repeat the simulation N times"))
 
 opts = info (helper <*> args)
    ( fullDesc
   <> progDesc "Simulate a chemical reaction network specified in FILE"
   <> header "ssa-hs - Stochastic Simulation Algorithm" )
 
+
+loggingMode :: Args -> Either Double [Double]
+loggingMode Args{..} = if length times > 1
+                          then Right times
+                          else Left (fromMaybe 10 granularity)
+
 settings :: Args -> SSA.Model -> (SSA.SimulationSettings,SSA.SimState)
-settings Args{..} s =
+settings args@Args{..} s =
   ( SSA.SimulationSettings
     { SSA.system = s
-    , SSA.tmax = tmax
-    , SSA.granularity = fromMaybe 10 granularity
+    , SSA.tmax = maximum times
+    , SSA.loggingMode = loggingMode args
     , SSA.verbose = verbose == Verbose
     , SSA.logFile = csv
+    , SSA.runs = max (fromMaybe 1 runs) 1
     }
   , SSA.SimState
     { SSA.state = SSA.initial s
