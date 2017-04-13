@@ -53,7 +53,7 @@ TokenParser
   , opLetter        = oneOf "+>-*/@;:"
   , reservedOpNames = ["+","-","*","/","@",";",":","->"]
   , reservedNames   = ["parameters","species","int","bool","boolean","const"
-                      ,"init","var","reactions"]
+                      ,"init","var","reactions","mass_action"]
   }
 
 expr :: Parser Expr
@@ -102,9 +102,33 @@ reaction = do
   m_reservedOp "->"
   output <- reactants
   m_reservedOp "@"
-  rate <- expr
+  rate <- prop input
   m_reservedOp ";"
   return (PReaction input output rate)
+
+prop :: Educt -> Parser Expr
+prop inp = massAction inp
+       <|> expr
+
+massAction :: [(Ident, Nat)] -> Parser Expr
+massAction inp = do
+  m_reserved "mass_action"
+  char '('
+  id <- m_identifier
+  char ')'
+  return (maExpr inp id)
+
+maExpr :: Educt -> Ident -> Expr
+maExpr inp c = BinOp Mul factor (maExpr' inp)
+  where
+    factor = BinOp Mul (Atomic (Var c)) (Atomic (Const a))
+    a = 1 -- / (foldl (*) 1 (fromIntegral . snd <$> inp))
+    maExpr' ((v, 0) : is) = error "internal parser error (non-positive input)"
+    maExpr' ((v, 1) : is) = BinOp Mul (Atomic (Var v)) (maExpr' is)
+    maExpr' ((v, a) : is) =
+      let e = BinOp Sub (Atomic (Var v)) (Atomic (Const (fromIntegral (a + 1))))
+       in BinOp Mul e (maExpr' ((v, a - 1) : is))
+    maExpr' [] = Atomic (Const 1)
 
 reactants :: Parser [(Ident, Nat)]
 reactants = none <|> reactant `sepBy` m_reservedOp "+" <?> "reactants"

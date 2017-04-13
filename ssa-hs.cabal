@@ -42,10 +42,12 @@ executable ssa-hs-exe
     -threaded -rtsopts -with-rtsopts=-N -Wall
   build-depends:
     base,
+    cassava,
     ssa-hs,
     transformers,
     optparse-applicative,
-    text
+    text,
+    vector
   default-language:
     Haskell2010
 

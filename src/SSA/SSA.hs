@@ -45,6 +45,9 @@ data SimulationSettings = SimulationSettings
   , verbose     :: Bool
   , logFile     :: Maybe FilePath
   , runs        :: Int
+  , startSmpls  :: [State]
+  , nStartSmpls :: Int
+  , writeTime   :: Bool
   }
 
 type Simulation a = RWST SimulationSettings Trajectory SimState IO a
@@ -54,14 +57,20 @@ simulation = do
   startTime <- gets time
   logStart
   r <- asks runs
-  replicateM_ r $ do
-    runSimulation
-    resetState startTime
+  forM_ [1..r] $ resetAndRun startTime
   logEnd
 
-resetState :: Time -> Simulation()
-resetState t = do
-  init <- initial <$> asks system
+resetAndRun :: Time -> Int -> Simulation ()
+resetAndRun t i = resetState t i >> runSimulation
+
+resetState :: Time -> Int -> Simulation ()
+resetState t i = do
+  nSmpls <- asks nStartSmpls
+  inits <- asks startSmpls
+  let init = inits !! (i `mod` nSmpls)
+  verbose <- asks verbose
+  when verbose $ do
+    liftIO . putStrLn $ "Restart simulation w/ initial state " <> show init
   put SimState { state = init
                , time  = t
                , tlast = 0
@@ -116,12 +125,14 @@ logState = do
 
 writeLog :: Time -> State -> Simulation ()
 writeLog time state = do
+  writeT <- asks writeTime
   let stateStr = (<> "\n") . T.init . T.tail . T.pack . show $ state
       timeStr = T.justifyLeft 10 ' ' . T.pack . show . round $ time
       timeState = (T.pack . show $ time) <> "," <> stateStr
+      s = if writeT then timeState else stateStr
   verbose <- asks verbose
   when verbose . liftIO . T.putStr $ timeStr <> stateStr
-  liftIO . maybe (pure ()) (`T.appendFile` timeState) =<< asks logFile
+  liftIO . maybe (pure ()) (`T.appendFile` s) =<< asks logFile
 
 logStart :: Simulation ()
 logStart = do
@@ -129,11 +140,15 @@ logStart = do
   mPath <- asks logFile
   case mPath of
     Nothing -> pure ()
-    Just p -> csvHeader p =<< asks system
+    Just p -> do
+      sys <- asks system
+      writeT  <- asks writeTime
+      csvHeader p sys writeT
 
-csvHeader :: MonadIO m => FilePath -> Model -> m ()
-csvHeader f = liftIO . T.writeFile f . ("time," <>) . (<> "\n")
-              . T.intercalate "," . names
+csvHeader :: MonadIO m => FilePath -> Model -> Bool -> m ()
+csvHeader f sys writeT =
+  let columns = (if writeT then ["time"] else []) <> names sys
+   in liftIO . T.writeFile f . (<> "\n") . T.intercalate "," $ columns
 
 logEnd :: Simulation ()
 logEnd = liftIO . putStrLn . endMsg =<< asks logFile
